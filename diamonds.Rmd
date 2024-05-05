@@ -1,0 +1,148 @@
+---
+html_document:
+  toc: true
+  toc_depth: 6
+  number_sections: true
+  toc_float: true
+  code_folding: hide
+  theme: flatly
+  code_download: true
+author: "Andrew Engellant"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+title: "Diamond Regression"
+---
+
+```{r setup, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(error = TRUE)
+
+library(tidyverse)
+library(scales)
+
+d <- read_tsv("diamond-data.txt")
+```
+
+## Introduction
+
+Imagine it's 2002, and you're part of the Amazon team that's just getting into the diamond market. It's an exciting time! Your manager just dropped some data on your desk: Amazon is sourcing diamonds from various suppliers. Your manager said that she calculated the average and found that Supplier B seemed really expensive. She asked,
+"should we just drop them and only use A and C?" Here are the numbers she
+reported to you: 
+```{r echo=F}
+for_table <- d %>% 
+  group_by(supplier) %>% 
+  summarize(mean_price = dollar(mean(price)))
+  # check out the scales library for the useful functions
+  # dollar, comma, and percent. 
+
+knitr::kable(for_table)
+```
+
+Being an intrepid data analyst, you know better than to just look at one 
+summary statistic, so you decide to plot the data. 
+
+```{r echo=F}
+ggplot(d,
+       aes(x=supplier,y=price)) + 
+  geom_boxplot() + 
+  theme_minimal() + 
+  labs(x="",y="Diamond Price",
+       title="Distribution of Diamond Prices by Supplier") + 
+  scale_y_continuous(label=dollar) # another cool scales application
+```
+
+Sure enough, your manager seems to be on to something. Your job? Dig into this data and find out if Amazon is getting different prices for diamonds of the same quality from different suppliers. Are these price differences significant, or just random noise? It's time to put your analytical skills to the test.
+
+You don't need to do a big write-up of your analysis. You can briefly explain 
+what you do, but the main thing is getting to an answer for your manager. We're
+going to revisit this assignment in a couple of weeks with the goal of presenting
+your results in a compelling fashion.
+
+There's a description of the data set at the end of this document. 
+
+## Analysis
+
+```{r}
+library(dplyr)
+
+#plot price vs carat size for all data
+ggplot(d,
+       aes(x = carat, y = price, color = supplier)) + 
+  geom_point() + 
+  theme_minimal() + 
+  labs(x="Carat Size",y="Price",
+       title="Price by Carats for each Company") +
+  geom_abline()
+
+hist(d$carat)
+#remove outliers
+carat_iqr <- IQR(d$carat)
+
+d_small <- d %>% 
+  filter(carat > quantile(d$carat, 0.25) - 1.5 * carat_iqr
+         & carat < quantile(d$carat, 0.75) + 1.5 * carat_iqr)
+
+#plot new data subset
+ggplot(d_small,
+       aes(x = carat, y = price, color = supplier)) + 
+  geom_point() + 
+  theme_minimal() + 
+  labs(x="Carat Size",y="Price",
+       title="Price by Carats for each Company") +
+  geom_abline()
+
+#View distribution of price
+hist(d_small$price)
+
+#distribution is heavily skewed right
+#create new variable as the log of price 
+d_small$log_price <- log(d_small$price)
+
+#view distribution of new variable
+hist(d_small$log_price)
+
+#create a linear model based on new data subset using log_price
+d_small_model <- lm(log_price ~ carat + supplier + cut + clarity + color, data = d_small)
+
+#plot regression assumptions
+par(mfrow = c(2,2))
+plot(d_small_model)
+
+#view summary of regression model
+summary(d_small_model)
+```
+
+When originally plotting the data, there appeared to be be several large diamonds that might be outliers, so I removed these data points using the 1.5 IQR rule on the carat variable. I then plotted the distribution of price This distribution was heavily right skewed, so I log transformed the price variable. The distribution of log(price) appeared slightly bi-model, however it resembled a normal distribution far better than the un-transformed variable. 
+
+I looked up the factors that most heavily contribute to the price of a diamond, and carat, cut, color, and clarity appeared to be the top factors. I used these variables along with the suppliers to create a linear model to predict the logged price. Next, I plotted the assumptions to for this model. The red line on the residuals vs fitted plot is close to flat, so the relationship appears to be roughly linear. The normal quantile plot (top right) looks mostly linear, indicating the residuals are normally distributed. The bottom left plot can be interpreted as having a somewhat random distribution of points around the red line, so the homoscedasticity assumption is confirmed. These plots all indicate that there are no major violations of the major assumptions of a linear regression model. 
+
+Last, I viewed a summary of the model to determine if Supplier B is selling their diamonds at a higher price than the other suppliers. The data indicate that a one carat increase in diamond size is associated with a 0.0219 unit increase in log(price) or a `r round(10^0.021998, 2)`% increase in price compared to supplier A, when all other variables are held constant. This model is very highly significant, and 92.96% of the variance in the data can be attributed to the variables assessed. The difference in price between suppliers is also very highly significant, with a p-value = 2.61e-9. The provided data indicates that supplier B is pricing their diamonds higher than Supplier A and Supplier C. Based on this information, Amazon should no longer buy diamonds from supplier B.
+
+
+## Appendix: Description of the Diamonds Dataset
+
+Our diamonds dataset is a comprehensive collection diamond data from our suppliers, 
+representing various attributes of a large number of diamonds. 
+The dataset includes the following attributes:
+
+- `Carat`: Numeric. Represents the weight of the diamond, measured in carats. A higher carat number indicates a heavier diamond.
+
+- `Cut`: Categorical. Indicates the quality of the cut of the diamond, which affects its symmetry, brightness, and overall appearance. The categories include Fair, Good, Very Good, Premium, and Ideal, with Ideal being the highest quality.
+
+- `Color`: Categorical. Denotes the color grade of the diamond, which ranges from J (lowest grade, more color) to D (highest grade, colorless). The grading scale moves from a noticeable color to colorless.
+
+- `Clarity`: Categorical. Describes the clarity of the diamond, which refers to the absence of inclusions and blemishes. The categories range from I1 (Inclusions 1, lowest clarity) to IF (Internally Flawless, highest clarity).
+
+- `Depth`: Numeric. The depth percentage of the diamond, calculated as the ratio of the diamond's total depth (from table to culet) to its average diameter.
+
+- `Table`: Numeric. Refers to the width of the top facet of the diamond, known as the table, relative to the widest point of the diamond. It is expressed as a percentage.
+
+- `Price`: Numeric. The price of the diamond in US dollars.
+
+- `X`: Numeric. The length of the diamond in millimeters.
+
+- `Y`: Numeric. The width of the diamond in millimeters.
+
+- `Z`: Numeric. The depth of the diamond in millimeters.
+
+- `Supplier`: Categorical. Represents the supplier of the diamonds to a major online marketplace (e.g., Amazon). Each diamond is sourced from one of several suppliers, each with varying reputations and qualities of service. The suppliers are anonymized and labeled as "Supplier A", "Supplier B", "Supplier C", etc.
+
